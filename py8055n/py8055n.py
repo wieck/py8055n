@@ -24,6 +24,8 @@ TAG_NEW_GET_DIGITAL_IN = 16
 TAG_NEW_GET_ANALOG_IN = 17
 TAG_NEW_GET_COUNTER = 18        # 18 and 19
 TAG_NEW_GET_COUNTER16 = 20      # 21 and 21
+TAG_NEW_GET_DIGITAL_OUT = 24
+TAG_NEW_GET_ANALOG_OUT = 25
 
 usb.init()
 
@@ -110,6 +112,7 @@ class py8055n:
 
         # ----
         # Attempt to switch to the requested protocol ("new" by default)
+        # If the switch to "new" is successful, read back all output settings.
         # ----
         if protocol is None or protocol == K8055N:
             self._debug('attempt to switch to "new" K8055N protocol')
@@ -140,6 +143,8 @@ class py8055n:
             if not ord(self.recv_buffer[1]) > 20:
                 raise RuntimeError('Failed to switch K8055N to new protocol')
             self.card_type = K8055N
+            self.readback_digital_all()
+            self.readback_analog_all()
         else:
             self.card_type = K8055
 
@@ -175,7 +180,7 @@ class py8055n:
         Set the debounce time of 'port' to 'ms' milliseconds.
         """
         if port < 0 or port > 1:
-            raise RuntimeError('invalid counter number %d'%port)
+            raise ValueError('invalid port number %d' % port)
 
         val = int(round(0.9 * 2.4541 * math.pow(ms, 0.5328)))
         if val < 1:
@@ -191,7 +196,7 @@ class py8055n:
             self.send_buffer[0] = chr(port + TAG_OLD_SET_DEBOUNCE)
             self.send_buffer[6 + port] = val
         else:
-            raise Exception('internal card_type error')
+            raise Exception('internal card_type %s error' % self.card_type)
         self._send_pkt()
         
     ##########
@@ -202,14 +207,14 @@ class py8055n:
         Reset a counter.
         """
         if port < 0 or port > 1:
-            raise RuntimeError('invalid counter number %d'%port)
+            raise ValueError('invalid port number %d' % port)
 
         if self.card_type == K8055N:
             self.send_buffer[0] = chr(port + TAG_NEW_RESET_COUNTER)
         elif self.card_type == K8055:
             self.send_buffer[0] = chr(port + TAG_OLD_RESET_COUNTER)
         else:
-            raise Exception('internal card_type error')
+            raise Exception('internal card_type %s error' % self.card_type)
         self._send_pkt()
         
     ##########
@@ -224,9 +229,41 @@ class py8055n:
         elif self.card_type == K8055:
             self.send_buffer[0] = chr(TAG_OLD_SET_OUTPUT)
         else:
-            raise Exception('internal card_type error')
+            raise Exception('internal card_type %s error' % self.card_type)
         self.send_buffer[1] = chr(val)
         self._send_pkt()
+
+    ##########
+    # set_digital_port()
+    ##########
+    def set_digital_port(self, port, val):
+        """
+        Set the state of one digital output.
+        """
+        if port < 0 or port > 7:
+            raise ValueError('invalid port number %d' % port)
+        if val:
+            self.set_digital_all(ord(self.send_buffer[1]) | (1 << port))
+        else:
+            self.set_digital_all(ord(self.send_buffer[1]) & ~(1 << port))
+
+    ##########
+    # readback_digital_all()
+    ##########
+    def readback_digital_all(self):
+        """
+        Read the state of all digital outputs.
+        """
+        if self.card_type == K8055N:
+            self.send_buffer[0] = chr(TAG_NEW_GET_DIGITAL_OUT)
+            self._send_pkt()
+            self._recv_pkt()
+            self.send_buffer[1] = self.recv_buffer[4]
+        elif self.card_type == K8055:
+            pass
+        else:
+            raise Exception('internal card_type %s error' % self.card_type)
+        return ord(self.send_buffer[1])
 
     ##########
     # read_digital_all()
@@ -241,7 +278,7 @@ class py8055n:
         elif self.card_type == K8055:
             pass
         else:
-            raise Exception('internal card_type error')
+            raise Exception('internal card_type %s error' % self.card_type)
         self._recv_pkt()
         val = ord(self.recv_buffer[0])
         return (((val & 0x10) >> 4) |
@@ -252,6 +289,17 @@ class py8055n:
         return ord(self.recv_buffer[0])
 
     ##########
+    # read_digital_port()
+    ##########
+    def read_digital_port(self, port):
+        """
+        Read the state of one digital input.
+        """
+        if port < 0 or port > 4:
+            raise ValueError('invalid port number %d' % port)
+        return (self.read_digital_all() & (1 << port)) != 0
+
+    ##########
     # read_counter()
     ##########
     def read_counter(self, port):
@@ -259,7 +307,7 @@ class py8055n:
         Read the current counter of 'port'.
         """
         if port < 0 or port > 1:
-            raise RuntimeError('illegal counter number %d'%port)
+            raise ValueError('invalid port number %d' % port)
         if self.card_type == K8055N:
             self.send_buffer[0] = chr(TAG_NEW_GET_COUNTER + port)
             self._send_pkt()
@@ -273,7 +321,7 @@ class py8055n:
             return ((ord(self.recv_buffer[4 + port * 2])) |
                     (ord(self.recv_buffer[5 + port * 2]) << 8))
         else:
-            raise Exception('internal card_type error')
+            raise Exception('internal card_type %s error' % self.card_type)
 
     ##########
     # read_counter16()
@@ -283,7 +331,7 @@ class py8055n:
         Read the current counter of 'port' (16 bit compatibility version).
         """
         if port < 0 or port > 1:
-            raise RuntimeError('illegal counter number %d'%port)
+            raise ValueError('invalid port number %d' % port)
         if self.card_type == K8055N:
             self.send_buffer[0] = chr(TAG_NEW_GET_COUNTER16 + port)
             self._send_pkt()
@@ -291,7 +339,7 @@ class py8055n:
         elif self.card_type == K8055:
             self._recv_pkt()
         else:
-            raise Exception('internal card_type error')
+            raise Exception('internal card_type %s error' % self.card_type)
         return ((ord(self.recv_buffer[4 + port * 2])) |
                 (ord(self.recv_buffer[5 + port * 2]) << 8))
 
@@ -307,17 +355,50 @@ class py8055n:
         elif self.card_type == K8055:
             self.send_buffer[0] = chr(TAG_OLD_SET_OUTPUT)
         else:
-            raise Exception('internal card_type error')
+            raise Exception('internal card_type %s error' % self.card_type)
         self.send_buffer[2] = chr(val1)
         self.send_buffer[3] = chr(val2)
         self._send_pkt()
+
+    ##########
+    # set_analog_port()
+    ##########
+    def set_analog_port(self, port, val):
+        """
+        Set the state of one analog output.
+        """
+        if port == 0:
+            self.set_analog_all(val, self.send_buffer[3])
+        elif port == 1:
+            self.set_analog_all(self.send_buffer[2], val)
+        else:
+            raise ValueError('invalid port number %d' % port)
+
+    ##########
+    # readback_analog_all()
+    ##########
+    def readback_analog_all(self):
+        """
+        Read the state of all analog outputs.
+        """
+        if self.card_type == K8055N:
+            self.send_buffer[0] = chr(TAG_NEW_GET_ANALOG_OUT)
+            self._send_pkt()
+            self._recv_pkt()
+            self.send_buffer[2] = self.recv_buffer[5]
+            self.send_buffer[3] = self.recv_buffer[6]
+        elif self.card_type == K8055:
+            pass
+        else:
+            raise Exception('internal card_type %s error' % self.card_type)
+        return ord(self.send_buffer[2]), ord(self.send_buffer[3])
 
     ##########
     # read_analog_all()
     ##########
     def read_analog_all(self):
         """
-        Read the state of all digital inputs.
+        Read the state of all analog inputs.
         """
         if self.card_type == K8055N:
             self.send_buffer[0] = chr(TAG_NEW_GET_ANALOG_IN)
@@ -325,11 +406,22 @@ class py8055n:
         elif self.card_type == K8055:
             pass
         else:
-            raise Exception('internal card_type error')
+            raise Exception('internal card_type %s error' % self.card_type)
         self._recv_pkt()
         val1 = ord(self.recv_buffer[2])
         val2 = ord(self.recv_buffer[3])
         return val1, val2
+
+    ##########
+    # read_analog_port()
+    ##########
+    def read_analog_port(self, port):
+        if port == 0:
+            return self.read_analog_all()[0]
+        elif port == 1:
+            return self.read_analog_all()[1]
+        else:
+            raise ValueError('invalid port number %d' % port)
 
     ############################################################
     # Private functions

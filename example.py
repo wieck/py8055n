@@ -7,10 +7,20 @@ import sys
 import py8055n
         
 def main(argv):
-    card = py8055n.py8055n(0)
-    print 'have card 0'
-    print 'press digital input 5 to end example'
-    card.set_digital_all(0x55)
+    try:
+        card = py8055n.py8055n(0)
+    except Exception as err:
+        sys.stderr.write(str(err) + '\n')
+        return 1
+
+    print 'CARD_0 opened'
+    print 'DIGITAL_OUT:', card.readback_digital_all()
+    print 'ANALOG_OUT:', card.readback_analog_all()
+    print 'IN_1:', card.read_digital_port(0)
+    print 'A_1:', card.read_analog_port(0)
+
+    card.set_digital_all(0x54)
+    card.set_digital_port(0, True)
     card.set_counter_debounce_time(0, 1)
     card.set_counter_debounce_time(1, 1)
     cur_d = -1
@@ -18,6 +28,12 @@ def main(argv):
     cur_c2 = -1
     cur_a1 = -1
     cur_a2 = -1
+
+    print ''
+    print '===================='
+    print 'press digital input 5 to end example'
+    print '===================='
+    print ''
     while True:
         new_d = card.read_digital_all()
         if new_d != cur_d:
