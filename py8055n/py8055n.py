@@ -129,15 +129,14 @@ class py8055n:
                     self.recv_buffer[1] = chr(card_number + 1)
                 else:
                     self._debug('found original K8055')
-        elif protocol is None:
-            self.send_buffer[0] = chr(TAG_NEW_SET_PROTO)
-            self._send_pkt()
-            self._recv_pkt()
+        else:
+            raise ValueError('unknown protocol ' + protocol)
 
         if ord(self.recv_buffer[1]) > 10:
             for i in range(0, 33):
                 if ord(self.recv_buffer[1]) > 20:
                     break
+                self.send_buffer[0] = chr(TAG_NEW_SET_PROTO)
                 self._send_pkt()
                 self._recv_pkt()
             if not ord(self.recv_buffer[1]) > 20:
@@ -168,7 +167,8 @@ class py8055n:
         """
         usb.release_interface(self.libusb_handle, self.interface_nr)
         if hasattr(usb, 'get_driver_np') and self.had_kernel_driver:
-            usb.attach_kernel_driver_np(self.libusb_handle, self.interface_nr)
+            if hasattr(usb, 'attach_kernel_driver_np'):
+                usb.attach_kernel_driver_np(self.libusb_handle, self.interface_nr)
         usb.close(self.libusb_handle)
         self.libusb_handle = None
 
@@ -447,9 +447,9 @@ class py8055n:
 
     def _send_pkt(self):
         self._debug('SEND:', self._dump_pkt(self.send_buffer))
-        rc = usb.interrupt_write(self.libusb_handle, 0x81, self.send_buffer, 0)
-        if rc != len(self.recv_buffer):
+        rc = usb.interrupt_write(self.libusb_handle, 0x01, self.send_buffer, 0)
+        if rc != len(self.send_buffer):
             raise RuntimeError(
                     'interrupt_write() returned {0} - expected {1}'.format(
-                    rc, len(self.recv_buffer)))
+                    rc, len(self.send_buffer)))
 
